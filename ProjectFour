@@ -1,5 +1,9 @@
-#Project One: Import-Export Script
+#Project Four: The Crucible
 import pandas as pd #for organizing data into dataframes and exporting to csv
+import argparse
+import pymongo
+
+
 finalList = {"finalLocation": [], "FrameNumbers": []} #store final data for dataframe and eventual csv processing
 
 #added list of strings to search for frames and such (instead of if statements lol)
@@ -51,28 +55,82 @@ def frameExtraction(line, newlocation):
 
 
 
-#next, rename baselightfilesystem1 to corresponding xytech locations, added 'r' to read
-def 
-with open('Baselight_Crucible_fall2025-1.txt', 'r') as file1: 
+#putting it all in one method for argparse later
+def FrameLocationDatasheet(): #NOTE: Save this for later (Step 8 on project)
+    #next, rename baselightfilesystem1 to corresponding xytech locations, added 'r' to read
+    with open('Baselight_Crucible_fall2025-1.txt', 'r') as file1: 
 
-    for line in file1: #read each line
-        for target in searchPrefix: #read each location on list and marks as target
-            if target in line: 
-                with open('Xytech_Crucible_fall2025-1.txt', 'r') as file2: #method to open second file to find corresponding location
-                    for line2 in file2:
-                        if target in line2: #checks for matching location
-                            newlocation = line2.split()[0] #puts it into new location
-                #extracting frame numbers (scary logic AAHHHHHH)
-                frameExtraction(line, newlocation)
+        for line in file1: #read each line
+            for target in searchPrefix: #read each location on list and marks as target
+                if target in line: 
+                    with open('Xytech_Crucible_fall2025-1.txt', 'r') as file2: #method to open second file to find corresponding location
+                        for line2 in file2:
+                            if target in line2: #checks for matching location
+                                newlocation = line2.split()[0] #puts it into new location
+                    #extracting frame numbers (scary logic AAHHHHHH)
+                    frameExtraction(line, newlocation)
 
 
-    #Finally, create a dataframe, and export to a csv file   
-    df = pd.DataFrame(finalList)
-    print(df)
-    df_sorted = df.sort_values(by="FrameNumbers", key=lambda x: x.str.split('-').str[0].astype(int)) #sorts by first number in range (had to go through hell to learn this )
-    print(df_sorted)
+        #Finally, create a dataframe, and export to a csv file   
+        df = pd.DataFrame(finalList)
+        print(df)
+        df_sorted = df.sort_values(by="FrameNumbers", key=lambda x: x.str.split('-').str[0].astype(int)) #sorts by first number in range (had to go through hell to learn this )
+        print(df_sorted)
 
-    #convert to csv file
-    df_sorted.to_csv("FrameLocationDatasheet.csv", index = False, header = True)
-    test_csv = pd.read_csv("FrameLocationDatasheet.csv") #debugging, remove later
-    print(test_csv)
+        #convert to csv file
+        df_sorted.to_csv("FrameLocationDatasheet.csv", index = False, header = True)
+        test_csv = pd.read_csv("FrameLocationDatasheet.csv") #debugging, remove later
+        print(test_csv)
+
+
+def DumpFiles(BaseCrucible, BaseExport, XyCrucible, XyFall, db_name, collection1, collection2):
+    # Connect to MongoDB
+    client = pymongo.MongoClient("mongodb+srv://lancestajimenez_db_user:wcHp8TWnJvdYi74Y@testcluster.vb9fgy4.mongodb.net/")
+    db = client[db_name]
+
+    # Read the first Excel file and insert into the first collection
+    df1 = pd.read_excel(BaseCrucible)
+    records1 = df1.to_dict(orient='records')
+    db[collection1].insert_many(records1)
+    print(f"Inserted {len(records1)} records into {collection1}")
+
+    # Read the second Excel file and insert into the second collection
+    df2 = pd.read_excel(BaseExport)
+    records2 = df2.to_dict(orient='records')
+    db[collection1].insert_many(records2)
+    print(f"Inserted {len(records2)} records into {collection1}")
+
+    # Read the third Excel file and insert into the second collection
+    df3 = pd.read_excel(XyCrucible)
+    records2 = df2.to_dict(orient='records')
+    db[collection2].insert_many(records2)
+    print(f"Inserted {len(records2)} records into {collection2}")
+
+    # Read the fourth Excel file and insert into the second collection
+    df4 = pd.read_excel(XyFall)
+    records2 = df2.to_dict(orient='records')
+    db[collection2].insert_many(records2)
+    print(f"Inserted {len(records2)} records into {collection2}")
+
+
+
+
+#argparsing 
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Overall argparse command for data analysis.")
+    parser.add_argument("BaseCrucible", metavar="FILE", type=str, help="Path to the text file (Baselight Crucible).")
+    parser.add_argument("BaseExport", metavar="FILE", type=str, help="Path to the text file (Baselight Fall).")
+    parser.add_argument("XyCrucible", metavar="FILE", type=str, help="Path to the text file (Xytech Crucible).")
+    parser.add_argument("XyFall", metavar="FILE", type=str, help="Path to the text file (Xytech Fall).")
+    parser.add_argument("db_name", help="Name of the MongoDB database")
+    parser.add_argument("collection1", help="Name of the first MongoDB collection (Base Dump)")
+    parser.add_argument("collection2", help="Name of the second MongoDB collection (Xytech Dump)")
+    parser.add_argument("--DumpFiles", action="store_true", dest="verbose", help="Dumps files into MongoDB collections")
+    parser.add_argument("--process", action="store_true", dest="verb", help="Process video file, ")
+    parser.add_argument("-output", action="store_true", dest="ver", help = "Search for all blocker bugs")
+    parser.add_argument("-verbo:", action="store_true", dest="verbo", help = "Search fir both repeatable and blocker bugs as yes")
+    parser.add_argument("-ve", action="store_true", dest="ve", help = "Search for specific date.")
+    parser.add_argument("-btc", action="store_true", dest="btc", help = "Baking the cake, access all query methods.")
+
+    args = parser.parse_args()
