@@ -1,0 +1,78 @@
+#Project One: Import-Export Script
+import pandas as pd #for organizing data into dataframes and exporting to csv
+finalList = {"finalLocation": [], "FrameNumbers": []} #store final data for dataframe and eventual csv processing
+
+#added list of strings to search for frames and such (instead of if statements lol)
+searchPrefix = [
+    "Planeshifter/reel4/partC/1920x1080",
+    "Planeshifter/reel2/VFX/Hydraulx/1920x1080",
+    "Planeshifter/reel1/partB/Hydraulx/1920x1080",
+    "Planeshifter/reel3/VFX/Hydraulx/1920x1080",
+    "Planeshifter/reel4/partB/1920x1080",
+    "Planeshifter/pickups/shot_VFX_Test_1a/1920x1080",
+    "Planeshifter/reel1/partA/1920x1080",
+    "Planeshifter/pickups/shot_VFX_Test_1b/1920x1080"
+]
+
+#added function for frame extraction (instead of copy-pasting the method 1000 FREAKING TIMES)
+def frameExtraction(line, newlocation):
+    intialnum = 0
+    nextnum = 0             #starting numbers to identify range (thanks for the hint Prof)
+    currentnum = 0
+    for word in line.split():  #looks at each word in the line 
+        if word.isdigit():      #if the word is a number...
+            if intialnum == 0:          #if case for the very first number
+                intialnum = int(word)
+                currentnum = intialnum
+            elif nextnum == 0:           #elif once we are on the second number
+                nextnum = int(word)
+                if nextnum - intialnum == 1: #check if the difference between the two numbers is 1 (for range)
+                    currentnum = nextnum    #if so, continue through loop to extend range
+                else:               #if NOT in range, decide whether to add a single digit or the range
+                    if intialnum == currentnum: #if only one number, append that number
+                        finalList["finalLocation"].append(newlocation.split()[0]) 
+                        finalList["FrameNumbers"].append(f"{intialnum}")
+                    else: #if more than one number, append range
+                        finalList["finalLocation"].append(newlocation.split()[0]) 
+                        finalList["FrameNumbers"].append(f"{intialnum}-{currentnum}")   #appends as a range
+                    intialnum = int(word) #reset intialnum to the new number
+                    currentnum = intialnum #reset currentnum to the new number
+                nextnum = 0 #restarts the process
+    
+    #fixes issue of ending ranges too early
+    if intialnum != 0:
+        if intialnum == currentnum:
+            finalList["finalLocation"].append(newlocation)
+            finalList["FrameNumbers"].append(f"{intialnum}")
+
+        else:
+            finalList["finalLocation"].append(newlocation)
+            finalList["FrameNumbers"].append(f"{intialnum}-{currentnum}")
+
+
+
+#next, rename baselightfilesystem1 to corresponding xytech locations, added 'r' to read
+def 
+with open('Baselight_Crucible_fall2025-1.txt', 'r') as file1: 
+
+    for line in file1: #read each line
+        for target in searchPrefix: #read each location on list and marks as target
+            if target in line: 
+                with open('Xytech_Crucible_fall2025-1.txt', 'r') as file2: #method to open second file to find corresponding location
+                    for line2 in file2:
+                        if target in line2: #checks for matching location
+                            newlocation = line2.split()[0] #puts it into new location
+                #extracting frame numbers (scary logic AAHHHHHH)
+                frameExtraction(line, newlocation)
+
+
+    #Finally, create a dataframe, and export to a csv file   
+    df = pd.DataFrame(finalList)
+    print(df)
+    df_sorted = df.sort_values(by="FrameNumbers", key=lambda x: x.str.split('-').str[0].astype(int)) #sorts by first number in range (had to go through hell to learn this )
+    print(df_sorted)
+
+    #convert to csv file
+    df_sorted.to_csv("FrameLocationDatasheet.csv", index = False, header = True)
+    test_csv = pd.read_csv("FrameLocationDatasheet.csv") #debugging, remove later
+    print(test_csv)
