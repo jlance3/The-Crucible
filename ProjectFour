@@ -1,12 +1,15 @@
 #Project Four: The Crucible
-import pandas as pd #for organizing data into dataframes and exporting to csv
-import argparse
-import pymongo
+import pandas as pd #dataframes --> csv / xls
+import argparse #argparse import (duh)
+import pymongo #database import
+import subprocess #ffmpeg / ffmprobe import
 
 
 finalList = {"finalLocation": [], "FrameNumbers": []} #store final data for dataframe and eventual csv processing
 
-#added list of strings to search for frames and such (instead of if statements lol)
+truefinalList = {"Location": [], "FrameRange": [], "TimeCode": []} #new list for the xls file, not really sure how I can put in thumbnails until after I turn it into xls
+
+#added list of strings to search for frames and such (instead of if statements lol) MAYBE CHANGE TO ACCOMMODATE DATABASE
 searchPrefix = [
     "Planeshifter/reel4/partC/1920x1080",
     "Planeshifter/reel2/VFX/Hydraulx/1920x1080",
@@ -15,7 +18,15 @@ searchPrefix = [
     "Planeshifter/reel4/partB/1920x1080",
     "Planeshifter/pickups/shot_VFX_Test_1a/1920x1080",
     "Planeshifter/reel1/partA/1920x1080",
-    "Planeshifter/pickups/shot_VFX_Test_1b/1920x1080"
+    "Planeshifter/pickups/shot_VFX_Test_1b/1920x1080",
+    "Fantastic4/reel1/partA/1920x1080",                     #also included project 1 keywords too, to simiplify database part
+    "Fantastic4/reel1/VFX/Hydraulx",
+    "Fantastic4/reel1/VFX/Framestore",
+    "Fantastic4/reel1/VFX/AnimalLogic",
+    "Fantastic4/reel1/partB/1920x1080",
+    "Fantastic4/pickups/shot_1ab/1920x1080",
+    "Fantastic4/pickups/shot_2b/1920x1080",
+    "Fantastic4/reel1/partC/1920x1080"
 ]
 
 #added function for frame extraction (instead of copy-pasting the method 1000 FREAKING TIMES)
@@ -53,17 +64,15 @@ def frameExtraction(line, newlocation):
             finalList["finalLocation"].append(newlocation)
             finalList["FrameNumbers"].append(f"{intialnum}-{currentnum}")
 
-
-
 #putting it all in one method for argparse later
-def FrameLocationDatasheet(): #NOTE: Save this for later (Step 8 on project)
+def FrameLocationDatasheet(baselight, xytech): #NOTE: Save this for later (Step 8 on project)
     #next, rename baselightfilesystem1 to corresponding xytech locations, added 'r' to read
-    with open('Baselight_Crucible_fall2025-1.txt', 'r') as file1: 
+    with open(baselight, 'r') as file1: 
 
         for line in file1: #read each line
             for target in searchPrefix: #read each location on list and marks as target
                 if target in line: 
-                    with open('Xytech_Crucible_fall2025-1.txt', 'r') as file2: #method to open second file to find corresponding location
+                    with open(xytech, 'r') as file2: #method to open second file to find corresponding location
                         for line2 in file2:
                             if target in line2: #checks for matching location
                                 newlocation = line2.split()[0] #puts it into new location
@@ -80,7 +89,8 @@ def FrameLocationDatasheet(): #NOTE: Save this for later (Step 8 on project)
         #convert to csv file
         df_sorted.to_csv("FrameLocationDatasheet.csv", index = False, header = True)
         test_csv = pd.read_csv("FrameLocationDatasheet.csv") #debugging, remove later
-        print(test_csv)
+        #print(test_csv)
+        return test_csv
 
 
 def DumpFiles(BaseCrucible, BaseExport, XyCrucible, XyFall, db_name, collection1, collection2):
@@ -89,34 +99,117 @@ def DumpFiles(BaseCrucible, BaseExport, XyCrucible, XyFall, db_name, collection1
     db = client[db_name]
 
     # Read the first Excel file and insert into the first collection
-    df1 = pd.read_excel(BaseCrucible)
-    records1 = df1.to_dict(orient='records')
-    db[collection1].insert_many(records1)
-    print(f"Inserted {len(records1)} records into {collection1}")
+    FrameLocationDatasheet(BaseCrucible, XyCrucible) 
+    #records1 = df1.to_dict(orient='records')
+    #db[collection1].insert_many(records1)
+    #print(f"Inserted {len(records1)} records into {collection1}")
 
     # Read the second Excel file and insert into the second collection
-    df2 = pd.read_excel(BaseExport)
+    df2 = FrameLocationDatasheet(BaseExport, XyFall) #NOTE: there's dups in the database, so remove dups in final xls file (i dont want to deal with it)
     records2 = df2.to_dict(orient='records')
     db[collection1].insert_many(records2)
     print(f"Inserted {len(records2)} records into {collection1}")
 
     # Read the third Excel file and insert into the second collection
-    df3 = pd.read_excel(XyCrucible)
-    records2 = df2.to_dict(orient='records')
-    db[collection2].insert_many(records2)
-    print(f"Inserted {len(records2)} records into {collection2}")
+    df3 = pd.read_csv(XyCrucible)
+    records3 = df3.to_dict(orient='records')
+    db[collection2].insert_many(records3)
+    print(f"Inserted {len(records3)} records into {collection2}")
 
     # Read the fourth Excel file and insert into the second collection
-    df4 = pd.read_excel(XyFall)
-    records2 = df2.to_dict(orient='records')
-    db[collection2].insert_many(records2)
-    print(f"Inserted {len(records2)} records into {collection2}")
+    df4 = pd.read_csv(XyFall)
+    records4 = df4.to_dict(orient='records')
+    db[collection2].insert_many(records4)
+    print(f"Inserted {len(records4)} records into {collection2}")
 
+
+def getTimecode(frame):
+    #Assuming that it is 24fps...
+    hours = frame // (24 * 60 * 60)
+    excesshr = frame % (24 * 60 * 60) # remaining frames after calculating hours
+    minutes = excesshr // (24 * 60)
+    excessmin = excesshr % (24 * 60) # remaining frames after calculating minutes
+    seconds = excessmin // 24
+    excessFinal = excessmin % 24 # remaining frames after calculating seconds
+
+    #return timecode
+    return f"{hours:02}:{minutes:02}:{seconds:02}:{excessFinal:02}"
+
+def Processing(db_name, collection1, video_file):
+    #calling database and getting Planeshifter frames
+    client = pymongo.MongoClient("mongodb+srv://lancestajimenez_db_user:wcHp8TWnJvdYi74Y@testcluster.vb9fgy4.mongodb.net/")
+    db = client[db_name]
+    col1 = db[collection1]
+    query1 = {
+        "$and": [ #checking for keywords in proper columns
+            {"finalLocation": {"$regex": "planeshifter", "$options": "i"}}, #made sure to account for capitalization, all good :)
+        ]
+    }
+
+    results1 = list(col1.find(query1))
+    df1 = pd.DataFrame(results1)
+    dfFinal = df1.drop_duplicates(subset=["finalLocation", "FrameNumbers"])
+
+    #extracting frame numbers from that list and creating a mapping to locations
+    frame_to_location = {}  # Dictionary to map frame numbers to their locations
+    for index, row in dfFinal.iterrows():
+        frame_range = row['FrameNumbers']
+        if '-' in frame_range:
+            start_frame, end_frame = map(int, frame_range.split('-'))
+            for frame in range(start_frame, end_frame + 1):
+                frame_to_location[frame] = row['finalLocation']
+        else:
+            frame_num = int(frame_range)
+            frame_to_location[frame_num] = row['finalLocation']
+    
+    frame_numbers = sorted(frame_to_location.keys())  # Get sorted unique frame numbers
+    print("Extracted Frame Numbers:", frame_numbers)
+
+    #organizing frames, timecodes, and locations
+    for num in frame_numbers:
+        #getting frame ranges
+        start_frame = max(0, num - 48)  # Ensure start frame is not negative
+        end_frame = num + 48
+
+        #get timecode for start_frame and end_frame
+        start_timecode = getTimecode(start_frame)
+        end_timecode = getTimecode(end_frame)
+        timecode = f"{start_timecode} - {end_timecode}"
+
+        #put into truefinalList for xls file later
+        truefinalList["Location"].append(frame_to_location[num])
+        truefinalList["FrameRange"].append(f"{start_frame}-{end_frame}")
+        truefinalList["TimeCode"].append(timecode)
+        testtruefinalList = pd.DataFrame(truefinalList)
+    print(testtruefinalList)
+
+    #using timecode ranges to take out a portion of a video file with subprocess/ffmpeg
+    for index, row in testtruefinalList.iterrows():
+        frame_range = row['FrameRange']
+        start_frame, end_frame = map(int, frame_range.split('-'))
+        
+        # Convert frames to seconds for ffmpeg (24 fps)
+        start_seconds = start_frame / 24 #changed
+        duration_frames = end_frame - start_frame
+        duration_seconds = duration_frames / 24  # Assuming 24 fps
+
+        output_filename = f"output_Planeshifter_frames_{frame_range}.mp4"
+
+        ffmpeg_command = [
+            'ffmpeg',
+            '-i', video_file,
+            '-ss', str(start_seconds), #changed
+            '-t', str(duration_seconds),
+            '-c', 'copy',
+            output_filename
+        ]
+
+        print(f"Executing command: {' '.join(ffmpeg_command)}")
+        subprocess.run(ffmpeg_command)
 
 
 
 #argparsing 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Overall argparse command for data analysis.")
     parser.add_argument("BaseCrucible", metavar="FILE", type=str, help="Path to the text file (Baselight Crucible).")
@@ -126,11 +219,18 @@ if __name__ == "__main__":
     parser.add_argument("db_name", help="Name of the MongoDB database")
     parser.add_argument("collection1", help="Name of the first MongoDB collection (Base Dump)")
     parser.add_argument("collection2", help="Name of the second MongoDB collection (Xytech Dump)")
-    parser.add_argument("--DumpFiles", action="store_true", dest="verbose", help="Dumps files into MongoDB collections")
-    parser.add_argument("--process", action="store_true", dest="verb", help="Process video file, ")
-    parser.add_argument("-output", action="store_true", dest="ver", help = "Search for all blocker bugs")
-    parser.add_argument("-verbo:", action="store_true", dest="verbo", help = "Search fir both repeatable and blocker bugs as yes")
-    parser.add_argument("-ve", action="store_true", dest="ve", help = "Search for specific date.")
-    parser.add_argument("-btc", action="store_true", dest="btc", help = "Baking the cake, access all query methods.")
+    parser.add_argument("video_file", metavar="FILE", type=str, help="path to the video file.")
+
+    parser.add_argument("--testDatasheet", action="store_true", dest="testDatasheet", help="testing if calls work")
+    parser.add_argument("--DumpFiles", action="store_true", dest="Dump_Files", help="Dumps files into MongoDB collections")
+    parser.add_argument("--process", action="store_true", dest="process", help="Process video file, ")
+    parser.add_argument("-output", action="store_true", dest="outputter", help = "command for later")
 
     args = parser.parse_args()
+
+    if args.Dump_Files:
+        DumpFiles(args.BaseCrucible, args.BaseExport, args.XyCrucible, args.XyFall, args.db_name, args.collection1, args.collection2)
+    if args.testDatasheet:
+        FrameLocationDatasheet(args.BaseCrucible, args.XyCrucible)
+    if args.process:
+        Processing(args.db_name, args.collection1, args.video_file)
