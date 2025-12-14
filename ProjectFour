@@ -3,6 +3,10 @@ import pandas as pd #dataframes --> csv / xls
 import argparse #argparse import (duh)
 import pymongo #database import
 import subprocess #ffmpeg / ffmprobe import
+import json #for getting og video timecode
+import os #for video folder management
+import openpyxl #for embedding images in xls
+import vimeo #for vimeo api (duh part 2)
 
 
 finalList = {"finalLocation": [], "FrameNumbers": []} #store final data for dataframe and eventual csv processing
@@ -98,14 +102,11 @@ def DumpFiles(BaseCrucible, BaseExport, XyCrucible, XyFall, db_name, collection1
     client = pymongo.MongoClient("mongodb+srv://lancestajimenez_db_user:wcHp8TWnJvdYi74Y@testcluster.vb9fgy4.mongodb.net/")
     db = client[db_name]
 
-    # Read the first Excel file and insert into the first collection
+    # Read the first Excel file and insert into the first collection (bugged where some info repeats twice, remove later)
     FrameLocationDatasheet(BaseCrucible, XyCrucible) 
-    #records1 = df1.to_dict(orient='records')
-    #db[collection1].insert_many(records1)
-    #print(f"Inserted {len(records1)} records into {collection1}")
 
     # Read the second Excel file and insert into the second collection
-    df2 = FrameLocationDatasheet(BaseExport, XyFall) #NOTE: there's dups in the database, so remove dups in final xls file (i dont want to deal with it)
+    df2 = FrameLocationDatasheet(BaseExport, XyFall) 
     records2 = df2.to_dict(orient='records')
     db[collection1].insert_many(records2)
     print(f"Inserted {len(records2)} records into {collection1}")
@@ -151,8 +152,8 @@ def Processing(db_name, collection1, video_file):
     dfFinal = df1.drop_duplicates(subset=["finalLocation", "FrameNumbers"])
 
     #extracting frame numbers from that list and creating a mapping to locations
-    frame_to_location = {}  # Dictionary to map frame numbers to their locations
-    for index, row in dfFinal.iterrows():
+    frame_to_location = {}  
+    for row in dfFinal.iterrows():
         frame_range = row['FrameNumbers']
         if '-' in frame_range:
             start_frame, end_frame = map(int, frame_range.split('-'))
@@ -183,8 +184,10 @@ def Processing(db_name, collection1, video_file):
         testtruefinalList = pd.DataFrame(truefinalList)
     print(testtruefinalList)
 
-    #using timecode ranges to take out a portion of a video file with subprocess/ffmpeg
-    for index, row in testtruefinalList.iterrows():
+    #using ranges to take out a portion of a video file with subprocess/ffmpeg
+    folder = 'VideoOutputFolder'
+    os.makedirs(folder, exist_ok=True)  # Ensure the folder exists
+    for row in testtruefinalList.iterrows():
         frame_range = row['FrameRange']
         start_frame, end_frame = map(int, frame_range.split('-'))
         
@@ -193,7 +196,7 @@ def Processing(db_name, collection1, video_file):
         duration_frames = end_frame - start_frame
         duration_seconds = duration_frames / 24  # Assuming 24 fps
 
-        output_filename = f"output_Planeshifter_frames_{frame_range}.mp4"
+        output_filename = os.path.join(folder, f"output_Planeshifter_frames_{frame_range}.mp4")
 
         ffmpeg_command = [
             'ffmpeg',
@@ -201,12 +204,147 @@ def Processing(db_name, collection1, video_file):
             '-ss', str(start_seconds), #changed
             '-t', str(duration_seconds),
             '-c', 'copy',
+            '-hide_banner',
             output_filename
         ]
 
         print(f"Executing command: {' '.join(ffmpeg_command)}")
         subprocess.run(ffmpeg_command)
+        
+   
+   
+    #getting og video timecode (i think that's the thing being asked of?)
+    ffprobe_command = [
+        'ffprobe',
+        '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'format=duration:stream=codec_type,duration,timecode',
+        '-of', 'json',
+        video_file
+    ]
 
+    print(f"Executing command: {' '.join(ffprobe_command)}")
+    result = subprocess.run(ffprobe_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+    data = json.loads(result.stdout)
+    if 'streams' in data:
+            for stream in data['streams']:
+                if stream.get('codec_type') == 'video' and 'timecode' in stream:
+                    print("Original Video Timecode:", stream['timecode'])
+
+    #if no built in timecode, create one based on video duration
+    if 'format' in data:
+            print("Video Duration (seconds):", data['format'].get('duration'))
+            OGduration = data['format'].get('duration')
+
+            #turns duration into frames
+            OGframe = int(float(OGduration) * 24) #assuming 24fps
+
+            #push frames into timecode function
+            OGTimecode = getTimecode(OGframe)
+            print("Original Video Timecode (calculated):", OGTimecode)
+            # return OGTimecode # Fallback to duration if no explicit timecode
+    
+    #returning dataframe to convert to xls in finalOutput method
+    return testtruefinalList
+
+
+#thumbnail creation, and xls creation/manipulation
+def finalOutput (db_name, collection1, video_file):
+    #taking dataframe from Processing method for xls conversion (also creates adds to the folder of video snippets for thumbnails + vimeo upload later)
+    DFtruefinalList = Processing(db_name, collection1, video_file)
+
+    #naming final file now to make it easier to read
+    xls_filename = "FinalOutputDatasheet.xlsx"
+
+    #creating thumbnails and adding to xls file as a new column
+    folder = 'VideoOutputFolder'
+    thumbnail_folder = 'Thumbnails'
+    os.makedirs(thumbnail_folder, exist_ok=True)  # Ensure the thumbnail folder exists
+    thumbnail_paths = []  # List to store thumbnail paths
+    for index, row in DFtruefinalList.iterrows():
+        frame_range = row['FrameRange']
+        output_video_path = os.path.join(folder, f"output_Planeshifter_frames_{frame_range}.mp4")
+        thumbnail_path = os.path.join(thumbnail_folder, f"thumbnail_frames_{frame_range}.jpg")
+
+        ffmpeg_thumbnail_command = [
+            'ffmpeg',
+            '-i', output_video_path,
+            '-ss', '00:00:01.000',  # Capture thumbnail at 1 second
+            '-vf', 'scale=96:74', 
+            '-vframes', '1',
+            '-hide_banner',
+            thumbnail_path
+        ]
+
+        print(f"Executing command: {' '.join(ffmpeg_thumbnail_command)}")
+        subprocess.run(ffmpeg_thumbnail_command)
+        thumbnail_paths.append(thumbnail_path)
+
+    # using openpyxl to import thumbnails into datasheet (new shit to figure out)
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Datasheet"
+
+    # Write headers
+    headers = ['Location', 'FrameRange', 'TimeCode', 'Thumbnail']
+    for col_num, header in enumerate(headers, 1):
+        sheet.cell(row=1, column=col_num, value=header)
+
+    # Write data and put in images
+    for row_num, (index, row) in enumerate(DFtruefinalList.iterrows(), 2):
+        sheet.cell(row=row_num, column=1, value=row['Location'])
+        sheet.cell(row=row_num, column=2, value=row['FrameRange'])
+        sheet.cell(row=row_num, column=3, value=row['TimeCode'])
+        # put in the thumbnail image
+        img_path = thumbnail_paths[index]  # matching with index
+        if os.path.exists(img_path):
+            img = openpyxl.drawing.image.Image(img_path)
+            img.anchor = f'D{row_num}'  # Column for Thumbnail
+            sheet.add_image(img)
+
+    workbook.save(xls_filename)
+    print(f"Final datasheet with embedded thumbnails saved as {xls_filename}")
+
+#method for uploading videos from VideoOutputFolder to Vimeo
+def uploadVimeo():
+    #taking videos from VideoOutputFolder and uploading to Vimeo using the api
+    client = vimeo.VimeoClient(
+        token = '3085cc7a860ce1612713a51d4df09619', 
+        key = '78a872f16cd0a5a74fb7b77999b7cca77702a53c', 
+        secret = 'EQ1mPOKSQFeazUe6HbU7eI57DaJsXzl5AEEUY+RdrSqc6yBFcBcpTAL68PDLZxSIv5j/TP/KA9ePdj/HiZ/OeB87XHS+riO2j3UyQjvaZSDQk1CDdamFZxVfV00JCjQx'
+    )
+    folder = 'VideoOutputFolder'
+    for filename in os.listdir(folder):
+        if filename.endswith(".mp4"):
+            video_path = os.path.join(folder, filename)
+            print(f"Uploading {video_path} to Vimeo...")
+            uri = client.upload(video_path, data={
+                'name': filename,
+                'description': 'Frames snippet upload.'
+            })
+            print(f"Upload successful! Video URL: {uri}")
+            
+
+def viewVimeo():
+    #method to access vimeo info
+    client = vimeo.VimeoClient(
+        token = '3085cc7a860ce1612713a51d4df09619', 
+        key = '78a872f16cd0a5a74fb7b77999b7cca77702a53c', 
+        secret = 'EQ1mPOKSQFeazUe6HbU7eI57DaJsXzl5AEEUY+RdrSqc6yBFcBcpTAL68PDLZxSIv5j/TP/KA9ePdj/HiZ/OeB87XHS+riO2j3UyQjvaZSDQk1CDdamFZxVfV00JCjQx'
+    )
+    videos = [] #setting up for dataframe --> csv
+    response = client.get('/me/videos')
+    if response.status_code == 200: #if work
+        data = response.json()
+        for video in data['data']:
+            videos.append({
+                'Title': video['name'],
+                'URI': video['uri'],
+                'Link': video['link'],
+                'Upload Status': video['status']
+            })
+    df_videos = pd.DataFrame(videos) #makes the df
+    df_videos.to_csv("VimeoUploads.csv", index=False) #converts it and creates a file
 
 
 #argparsing 
@@ -223,8 +361,10 @@ if __name__ == "__main__":
 
     parser.add_argument("--testDatasheet", action="store_true", dest="testDatasheet", help="testing if calls work")
     parser.add_argument("--DumpFiles", action="store_true", dest="Dump_Files", help="Dumps files into MongoDB collections")
-    parser.add_argument("--process", action="store_true", dest="process", help="Process video file, ")
-    parser.add_argument("-output", action="store_true", dest="outputter", help = "command for later")
+    parser.add_argument("--process", action="store_true", dest="process", help="Process video file ")
+    parser.add_argument("--output", action="store_true", dest="outputter", help = "outpul a xls file with info")
+    parser.add_argument("--upload", action="store_true", dest="upload", help = "upload folder of videos to vimeo")
+    parser.add_argument("--view", action="store_true", dest="view", help = "upload folder of videos to vimeo")
 
     args = parser.parse_args()
 
@@ -234,3 +374,9 @@ if __name__ == "__main__":
         FrameLocationDatasheet(args.BaseCrucible, args.XyCrucible)
     if args.process:
         Processing(args.db_name, args.collection1, args.video_file)
+    if args.outputter:
+        finalOutput(args.db_name, args.collection1, args.video_file)
+    if args.upload:
+        uploadVimeo()
+    if args.view:
+        viewVimeo()
