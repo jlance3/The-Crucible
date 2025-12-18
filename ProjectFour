@@ -290,17 +290,17 @@ def finalOutput (db_name, collection1, video_file):
     for col_num, header in enumerate(headers, 1):
         sheet.cell(row=1, column=col_num, value=header)
 
-    # Write data and put in images
+    # Writes existing data
     for row_num, (index, row) in enumerate(DFtruefinalList.iterrows(), 2):
         sheet.cell(row=row_num, column=1, value=row['Location'])
         sheet.cell(row=row_num, column=2, value=row['FrameRange'])
         sheet.cell(row=row_num, column=3, value=row['TimeCode'])
-        # put in the thumbnail image
+        # puts in the thumbnail image
         img_path = thumbnail_paths[index]  # matching with index
-        if os.path.exists(img_path):
-            img = openpyxl.drawing.image.Image(img_path)
+        if os.path.exists(img_path): #checking for thumbnail
+            img = openpyxl.drawing.image.Image(img_path) #assigns image (img) to the path found in list
             img.anchor = f'D{row_num}'  # Column for Thumbnail
-            sheet.add_image(img)
+            sheet.add_image(img) #slaps it on
 
     workbook.save(xls_filename)
     print(f"Final datasheet with embedded thumbnails saved as {xls_filename}")
@@ -314,11 +314,11 @@ def uploadVimeo():
         secret = 'EQ1mPOKSQFeazUe6HbU7eI57DaJsXzl5AEEUY+RdrSqc6yBFcBcpTAL68PDLZxSIv5j/TP/KA9ePdj/HiZ/OeB87XHS+riO2j3UyQjvaZSDQk1CDdamFZxVfV00JCjQx'
     )
     folder = 'VideoOutputFolder'
-    for filename in os.listdir(folder):
+    for filename in os.listdir(folder): 
         if filename.endswith(".mp4"):
-            video_path = os.path.join(folder, filename)
-            print(f"Uploading {video_path} to Vimeo...")
-            uri = client.upload(video_path, data={
+            video_path = os.path.join(folder, filename) #creates path to each video ending with .mp4 in the folder
+            print(f"Uploading {video_path} to Vimeo...") #debug
+            uri = client.upload(video_path, data={ #uploads video based on new path
                 'name': filename,
                 'description': 'Frames snippet upload.'
             })
